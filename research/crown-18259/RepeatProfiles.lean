@@ -43,6 +43,13 @@ set_option maxRecDepth 40000 in
 set_option maxHeartbeats 15000000 in
 theorem exact_counts : (stage0.length,stage1.length,stage2.length,stage3.length) = (34,17,15,11) := by decide
 
+set_option maxRecDepth 40000 in
+set_option maxHeartbeats 15000000 in
+theorem everyRemainingHasFourOrFiveO :
+    (stage3.all fun p =>
+      let n := ((tags p).filter (·==0)).length
+      n == 4 || n == 5) = true := by decide
+
 theorem hidesAtTrue (f : Bool → Bool) (a b : Bool) : f (true || a) = f (true || b) := rfl
 theorem twinAbsorption (z v : Bool) : z || (z && v) = z := by cases z <;> rfl
 theorem erasureBudget (k removed a : Nat) (hk : k ≤ 22) (hr : removed ≤ k)
