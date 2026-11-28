@@ -60,4 +60,68 @@ function check() {
   }
   return stats;
 }
-console.log(JSON.stringify(check()));
+
+function passesRoot(t, inputs, signs) {
+  const pos = [], neg = [];
+  for (let k=0;k<16;k++) {
+    const r=k>>2,c=k&3;
+    const s=inputs.reduce((v,input,b)=>v^((input===r||input===4+c)?1<<b:0),signs);
+    ((t>>>k)&1?pos:neg).push(s);
+  }
+  const forPos=pos.map(p=>neg.map(n=>p&~n));
+  const forNeg=neg.map(n=>pos.map(p=>p&~n));
+  const allows=(a,b,requirements)=>requirements.every(ds=>ds.every(d=>d&a)||ds.every(d=>d&b));
+  for(let a=1;a<32;a++) {
+    const b=63^a;
+    if(allows(a,b,forPos)||allows(a,b,forNeg))return true;
+  }
+  return false;
+}
+function classifySupport(t,rows,cols,r,c) {
+  const inputs=[];let signs=0;
+  for(const [values,omit,offset] of [[rows,r,0],[cols,c,4]])for(let k=0;k<4;k++)if(k!==omit){
+    const a=values[omit],b=values[k],common=a&b;
+    if(common!==a&&common!==b)return [false,false,false];
+    if(common===b)signs|=1<<inputs.length;
+    inputs.push(k+offset);
+  }
+  if(!passesRoot(t,inputs,signs))return [true,false,false];
+  const b=rows[r];
+  const constant=(b===0||b===15)&&b===cols[c];
+  const normalized=rows.map(row=>row^b);
+  return [true,true,!constant||normalized.every(x=>normalized.every(y=>(x&y)===0||x===y))];
+}
+function census() {
+  const table={distinct:0, compare:0,root:0,combined:0,exact:0,errors:0};
+  const support={combined:0,exact:0,falsePass:0};
+  const examples={};
+  const sets=Array.from({length:16},(_,k)=>formulas(k>>2,k&3));
+  for(let t=0;t<65536;t++){
+    const rows=[0,1,2,3].map(i=>(t>>>(4*i))&15);
+    const cols=[0,1,2,3].map(j=>rows.reduce((m,r,i)=>m|(((r>>>j)&1)<<i),0));
+    if(new Set(rows).size!==4||new Set(cols).size!==4)continue;
+    table.distinct++;
+    const best=[false,false,false,false], list=[];
+    for(let r=0;r<4;r++)for(let c=0;c<4;c++){
+      const stages=[...classifySupport(t,rows,cols,r,c),sets[4*r+c].has(t)];
+      for(let k=0;k<4;k++)best[k]||=stages[k];
+      support.combined+=+stages[2];support.exact+=+stages[3];support.falsePass+=+(stages[2]&&!stages[3]);
+      if(stages[3]&&!stages[2])throw Error("false rejection "+JSON.stringify({t,r,c,stages}));
+      if(stages[0])list.push({r,c,stages});
+    }
+    ["compare","root","combined","exact"].forEach((key,k)=>table[key]+=+best[k]);
+    table.errors+=+(best[2]!==best[3]);
+    if([0x125,0x136,0x127,0x421].includes(t))examples[t.toString(16)]=list;
+  }
+  return {table,support,examples};
+}
+
+const baseline = check();
+const result = census();
+assert(result.table.root === 8640 && result.table.combined === 7488 && result.table.errors === 0, "root filter census mismatch");
+assert(result.support.combined === 31104 && result.support.exact === 24192 && result.support.falsePass === 6912, "support census mismatch");
+const stages = (t,r,c) => result.examples[t.toString(16)].find(x => x.r === r && x.c === c)?.stages.map(Number).join("");
+assert(stages(0x0136,3,3)==="1000","root rejection regression");
+assert(stages(0x0125,3,3)==="1100","constant-border rejection regression");
+assert(stages(0x0127,0,3)==="1110" && stages(0x0127,0,2)==="1111" && stages(0x0127,3,2)==="1111","support provenance regression");
+console.log(JSON.stringify({ baseline, ...result }));
