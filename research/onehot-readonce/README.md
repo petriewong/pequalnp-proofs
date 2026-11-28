@@ -22,3 +22,9 @@ The combined rule agrees with exact formula search on all 33,864 distinct-patter
 - `0x0136`: passes comparability; no root split survives.
 - `0x0125`: a root split survives; the constant-border rule rejects it.
 - `0x0127`: omission (0,3) survives both rules but has no formula. Its positive result belongs to omissions (0,2) and (3,2), not (0,3). Preserve the actual checked omission when reporting a witness. Indices are zero-based.
+
+## NOT budgets on a fixed support
+
+A separate minimum-cost read-once DP reproduces all 24,192 realizable six-input support pairs. Their minima for zero, one, two and three NOT gates are 384, 4,416, 10,368 and 9,024 pairs respectively. Each formula has five binary gates, and these minimum NOT counts do not apply to circuits that reuse signals.
+
+In `0x135f` the (3,3) omission has a zero-NOT circuit; omissions (0,3) and (3,0) need three NOTs each. All three formulas are replayed on the 16 promise points and checked against the actual omitted pair. A cap of zero or one must pass the (3,3) witness and reject the other two on cost, without calling them semantically invalid. In `0x0127`, valid omissions (3,2) and (0,2) need one and three NOTs respectively.

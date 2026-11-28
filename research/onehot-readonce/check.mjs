@@ -124,4 +124,61 @@ const stages = (t,r,c) => result.examples[t.toString(16)].find(x => x.r === r &&
 assert(stages(0x0136,3,3)==="1000","root rejection regression");
 assert(stages(0x0125,3,3)==="1100","constant-border rejection regression");
 assert(stages(0x0127,0,3)==="1110" && stages(0x0127,0,2)==="1111" && stages(0x0127,3,2)==="1111","support provenance regression");
-console.log(JSON.stringify({ baseline, ...result }));
+
+function costBySupport(r,c) {
+  const leaves=masks.filter((_,k)=>k!==r&&k!==4+c);
+  const dp=Array.from({length:64},()=>new Map());
+  for(let s=1;s<64;s++){
+    const update=(t,c)=>{if(c<(dp[s].get(t)??127))dp[s].set(t,c);};
+    const literal=(t,c)=>{update(t,c);update(t^65535,c+1);};
+    if(!(s&(s-1))){literal(leaves[Math.log2(s)],0);continue;}
+    for(let p=(s-1)&s;p;p=(p-1)&s){
+      const q=s^p;if(p>=q)continue;
+      for(const [a,x] of dp[p])for(const [b,y] of dp[q]) {
+        literal(a&b,x+y);literal(a|b,x+y);
+      }
+    }
+  }
+  return dp[63];
+}
+function costCensus() {
+  const support=Array(7).fill(0),table=Array(7).fill(0),examples={};let gap03=0;
+  const sets=Array.from({length:16},(_,k)=>costBySupport(k>>2,k&3));
+  for(let t=0;t<65536;t++){
+    const rows=[0,1,2,3].map(i=>(t>>>(4*i))&15);
+    const cols=[0,1,2,3].map(j=>rows.reduce((a,r,i)=>a|(((r>>>j)&1)<<i),0));
+    if(new Set(rows).size!==4||new Set(cols).size!==4)continue;
+    const sc=sets.flatMap((m,k)=>m.has(t)?[{r:k>>2,c:k&3,n:m.get(t)}]:[]);
+    if(!sc.length)continue;
+    for(const {n} of sc)support[n]++;
+    const costs=sc.map(x=>x.n);
+    const min=Math.min(...costs),max=Math.max(...costs);
+    table[min]++;gap03+=+(min===0&&max===3);
+    if([0x127,0x135f].includes(t))examples[t.toString(16)]=sc;
+  }
+  function fixture(r,c,gate,n){
+    const seen=new Set;
+    function f(node,i,j){
+      if(Number.isInteger(node)){seen.add(node);return node<4?node===i:node===4+j;}
+      const p=f(node[1],i,j);
+      if(node[0]==="not")return !p;
+      const q=f(node[2],i,j);
+      return node[0]==="and"?p&&q:p||q;
+    }
+    for(let i=0;i<4;i++)for(let j=0;j<4;j++)assert(+f(gate,i,j)===(0x135f>>>(4*i+j)&1),"cost witness truth");
+    assert(seen.size===6&&!seen.has(r)&&!seen.has(4+c),"cost witness support");
+    const count=(g,op)=>Number.isInteger(g)?0:+(g[0]===op)+g.slice(1).reduce((s,x)=>s+count(x,op),0);
+    assert(count(gate,"not")===n && count(gate,"and")+count(gate,"or")===5,"cost witness gates");
+    assert(sets[4*r+c].get(0x135f)===n,"cost witness not minimal for support");
+  }
+  const a=["or",["or",0,4],["or",["and",1,6],["and",2,5]]];
+  const b=["or",4,["and",["not",3],["and",["or",["not",1],6],["or",["not",2],5]]]];
+  const transpose=g=>Number.isInteger(g)?g^4:[g[0],...g.slice(1).map(transpose)];
+  fixture(3,3,a,0);fixture(0,3,b,3);fixture(3,0,transpose(b),3);
+  assert(JSON.stringify(support)===JSON.stringify([384,4416,10368,9024,0,0,0]),"support histogram");
+  assert(JSON.stringify(table)===JSON.stringify([384,2688,1152,3264,0,0,0]),"table histogram");
+  assert(gap03===288,"gap histogram");
+  return {support,table,gap03,examples};
+}
+
+console.log(JSON.stringify({ baseline, ...result, costs: costCensus() }));
